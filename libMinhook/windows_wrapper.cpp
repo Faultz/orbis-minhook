@@ -425,9 +425,12 @@ HANDLE OpenThread(DWORD dwDesiredAccess, BOOL bInheritHandle, DWORD dwThreadId)
 // SuspendThread
 DWORD SuspendThread(HANDLE hThread)
 {
-	if (pthread_suspend_user_context_np((thread*)hThread) < 0)
-		return -1;
-	return 0;
+	// this is bugged & causes a deadlock
+	//if (pthread_suspend_user_context_np((thread*)hThread) < 0)
+	//	return -1;
+	//return 0;
+
+	return -1; 
 }
 
 // ResumeThread
