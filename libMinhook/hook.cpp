@@ -250,6 +250,12 @@ static VOID EnumerateThreads(PFROZEN_THREADS pThreads) {
 
 	while (currentThread != nullptr)
 	{
+		if (currentThread->tid == GetCurrentThreadId())
+		{
+			currentThread = currentThread->next;
+			continue;
+		}
+
 		if (pThreads->pItems == NULL) {
 			pThreads->capacity = INITIAL_THREAD_CAPACITY;
 			pThreads->pItems = (LPDWORD)HeapAlloc(

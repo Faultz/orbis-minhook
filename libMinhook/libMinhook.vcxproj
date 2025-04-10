@@ -56,6 +56,7 @@
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <CppLanguageStd>Cpp17</CppLanguageStd>
       <CppExceptions>true</CppExceptions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <Addressing>NonAslr</Addressing>
