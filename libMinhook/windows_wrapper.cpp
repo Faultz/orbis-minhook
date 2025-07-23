@@ -133,8 +133,65 @@ SIZE_T VirtualQuery(LPVOID lpAddress, PMEMORY_BASIC_INFORMATION lpBuffer, SIZE_T
 	return sizeof(SceKernelVirtualQueryInfo);
 }
 
+#define MAX_ALLOCATIONS 1024
+
+struct AllocationNode 
+{
+	LPVOID address;
+	SIZE_T size;
+	AllocationNode* next;
+};
+AllocationNode g_nodePool[MAX_ALLOCATIONS];
+AllocationNode* g_freeNodeList = NULL;
+AllocationNode* g_allocatedMemoryList = NULL;
+
+
+// Function to initialize our node pool and free list
+void InitializeAllocationTracker() 
+{
+	// Link all the nodes in the pool together to form the free list
+	for (int i = 0; i < MAX_ALLOCATIONS - 1; ++i) 
+	{
+		g_nodePool[i].next = &g_nodePool[i + 1];
+	}
+
+	g_nodePool[MAX_ALLOCATIONS - 1].next = NULL;
+	g_freeNodeList = &g_nodePool[0];
+}
+
+// Get a free node from our pool
+AllocationNode* allocNode() 
+{
+	if (g_freeNodeList == NULL) 
+	{
+		return NULL; // No free nodes available
+	}
+
+	AllocationNode* node = g_freeNodeList;
+	g_freeNodeList = g_freeNodeList->next;
+	return node;
+}
+
+void freeNode(AllocationNode* node) 
+{
+	if (node == NULL)
+	{
+		return;
+	}
+
+	node->next = g_freeNodeList;
+	g_freeNodeList = node;
+}
+
 LPVOID VirtualAlloc(LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect)
 {
+	// One-time initialization of the allocation tracker
+	static bool trackerInitialized = false;
+	if (!trackerInitialized) {
+		InitializeAllocationTracker();
+		trackerInitialized = true;
+	}
+
 	// we need to replicate the results of VirtualAlloc on windows.
 	auto protection = convert_to_sce_protection(flProtect);
 
@@ -145,27 +202,59 @@ LPVOID VirtualAlloc(LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWO
 		return NULL;
 	}
 
-	allocatedMemory[lpAddress] = dwSize;
+	// Get a node from our pool to track this allocation
+	AllocationNode* newNode = allocNode();
+	if (newNode == NULL) {
+		// If we can't track it, we must unmap it.
+		sceKernelMunmap(lpAddress, dwSize);
+		printf("VirtualAlloc failed: exceeded maximum number of allocations\n");
+		return NULL;
+	}
+
+	newNode->address = lpAddress;
+	newNode->size = dwSize;
+	newNode->next = g_allocatedMemoryList;
+	g_allocatedMemoryList = newNode;
 
 	return lpAddress;
 }
 
 BOOL VirtualFree(LPVOID lpAddress, SIZE_T dwSize, DWORD dwFreeType)
 {
-	auto it = allocatedMemory.find(lpAddress);
-	if (it == allocatedMemory.end())
+	AllocationNode* current = g_allocatedMemoryList;
+	AllocationNode* previous = NULL;
+
+	// Find the allocation in our list
+	while (current != NULL && current->address != lpAddress) {
+		previous = current;
+		current = current->next;
+	}
+
+	if (current == NULL)
 	{
 		printf("VirtualFree failed: memory not found\n");
 		return FALSE;
 	}
 
 	// we need to replicate the results of VirtualFree on windows.
-	int res = sceKernelMunmap(lpAddress, (*it).second);
+	int res = sceKernelMunmap(current->address, current->size);
 	if (res < 0)
 	{
 		printf("sceKernelMunmap failed: %d\n", res);
 		return FALSE;
 	}
+
+	// Remove the node from the active list
+	if (previous == NULL) {
+		// It's the head of the list
+		g_allocatedMemoryList = current->next;
+	}
+	else {
+		previous->next = current->next;
+	}
+
+	// Return the node to the free pool
+	freeNode(current);
 
 	return TRUE;
 }
