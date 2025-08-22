@@ -3,9 +3,6 @@
 #include <mspace.h>
 
 #include <sce_atomic.h>
-#include <unordered_map>
-
-std::unordered_map<LPVOID, size_t> allocatedMemory;
 size_t size;
 void* flexibleMemory = nullptr;
 
